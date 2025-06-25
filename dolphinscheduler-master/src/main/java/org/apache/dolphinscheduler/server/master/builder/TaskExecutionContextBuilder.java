@@ -58,6 +58,7 @@ public class TaskExecutionContextBuilder {
      */
     public TaskExecutionContextBuilder buildTaskInstanceRelatedInfo(TaskInstance taskInstance) {
         taskExecutionContext.setTaskInstanceId(taskInstance.getId());
+        taskExecutionContext.setTaskCode(taskInstance.getTaskCode());
         taskExecutionContext.setTaskName(taskInstance.getName());
         taskExecutionContext.setFirstSubmitTime(DateUtils.dateToTimeStamp(taskInstance.getFirstSubmitTime()));
         taskExecutionContext.setStartTime(DateUtils.dateToTimeStamp(taskInstance.getStartTime()));
