@@ -2,19 +2,18 @@
 package org.apache.dolphinscheduler.plugin.task.callback;
 
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.collections4.CollectionUtils;
 import org.apache.dolphinscheduler.common.utils.JSONUtils;
 import org.apache.dolphinscheduler.plugin.task.api.AbstractTask;
 import org.apache.dolphinscheduler.plugin.task.api.TaskCallBack;
 import org.apache.dolphinscheduler.plugin.task.api.TaskException;
 import org.apache.dolphinscheduler.plugin.task.api.TaskExecutionContext;
-import org.apache.dolphinscheduler.plugin.task.api.model.Property;
 import org.apache.dolphinscheduler.plugin.task.api.parameters.AbstractParameters;
-import org.apache.dolphinscheduler.plugin.task.api.utils.ParameterUtils;
 import org.apache.http.HttpEntity;
 import org.apache.http.ParseException;
 import org.apache.http.client.config.RequestConfig;
-import org.apache.http.client.methods.*;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.utils.URIBuilder;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
@@ -26,9 +25,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -45,7 +42,7 @@ public class CallbackTask extends AbstractTask {
 
 
     private String dataCenterPrefixUrl;
-    private String dsAgentPrefixUrl;
+    private String dsAgentExecApiUrl;
 
     /**
      * constructor
@@ -67,7 +64,7 @@ public class CallbackTask extends AbstractTask {
         }
         //TODO
         dataCenterPrefixUrl = System.getenv("DATA_CENTER_PREFIX_URL");
-        dsAgentPrefixUrl = System.getenv("DS_AGENT_PREFIX_URL");
+        dsAgentExecApiUrl = System.getenv("DS_AGENT_PREFIX_URL");
     }
 
     @Override
@@ -102,11 +99,13 @@ public class CallbackTask extends AbstractTask {
             }
 
             try (CloseableHttpClient client = createHttpClient();
-                 CloseableHttpResponse response = sendRequest(client, dataCenterPrefixUrl + callbackParameters.getStatusUrl())) {
+                 CloseableHttpResponse response = sendRequestGet(client, dataCenterPrefixUrl + callbackParameters.getStatusUrl())) {
                 int statusCode = response.getStatusLine().getStatusCode();
                 String body = getResponseBody(response);
-                Map<String, String> responseMap = JSONUtils.toMap(body);
-                if (!"200".equals(statusCode) || responseMap == null || !"0".equals(responseMap.get(respCode))) {
+                ApiResponseData responseData =
+                        JSONUtils.parseObject(body, ApiResponseData.class);
+                //Map<String, Object> responseMap = JSONUtils.toMap(body, String.class, Object.class);
+                if (200 != statusCode || responseData == null || 0 != responseData.getCode()) {
                     failCount++;
                     log.error("{}请求获取状态失败，失败第{}次，taskId：{}，taskInstanceId：{}",
                             callbackParameters.getStatusUrl(), failCount,
@@ -120,22 +119,28 @@ public class CallbackTask extends AbstractTask {
                     continue;
                 }
 
-                String status = responseMap.get(respStatus);
+                //String status = responseMap.get(respStatus);
+                String status = responseData.getData();
+
                 switch (callbackParameters.getTaskRealType()) {
                     case BATCH -> {
                         if (TaskStatus.RUNNING.toString().equals(status)) {
 
                         } else if (TaskStatus.SUCCESS.toString().equals(status)) {
+                            exitStatusCode = 0;
                             return;
                         }
-                        else if (TaskStatus.FAILD.toString().equals(status)) {
+                        else if (TaskStatus.FAILED.toString().equals(status)) {
                             exitStatusCode = -1;
+                            return;
+                        } else if (TaskStatus.CANCEL.toString().equals(status)) {
+                            exitStatusCode = 137;
                             return;
                         }
                     } case REALTIME -> {
                         if (TaskStatus.RUNNING.toString().equals(status)) {
 
-                        } else if (TaskStatus.FAILD.toString().equals(status)) {
+                        } else if (TaskStatus.FAILED.toString().equals(status)) {
                             exitStatusCode = -1;
                             // 重新启动新的任务实例
                             for (int i = 0; i < 3; i++) {
@@ -143,7 +148,9 @@ public class CallbackTask extends AbstractTask {
                                     break;
                                 }
                             }
+                            return;
                         } else if (TaskStatus.CANCEL.toString().equals(status)) {
+                            exitStatusCode = 0;
                             return;
                         }
 
@@ -163,14 +170,16 @@ public class CallbackTask extends AbstractTask {
     private boolean startTask() {
         boolean result = true;
         try (CloseableHttpClient client = createHttpClient();
-             CloseableHttpResponse response = sendRequest(client, dataCenterPrefixUrl + callbackParameters.getStartUrl())) {
+             CloseableHttpResponse response = sendRequestGet(client, dataCenterPrefixUrl + callbackParameters.getStartUrl())) {
             int statusCode = response.getStatusLine().getStatusCode();
             String body = getResponseBody(response);
-            Map<String, String> responseMap = JSONUtils.toMap(body);
-            if (!"200".equals(statusCode) || responseMap == null || !"0".equals(responseMap.get(respCode))) {
+            //Map<String, Object> responseMap = JSONUtils.toMap(body, String.class, Object.class);
+            ApiResponseData responseData =
+                    JSONUtils.parseObject(body, ApiResponseData.class);
+            if (200 != statusCode || responseData == null || 0 != responseData.getCode()) {
                 log.error("{}任务开始失败，http响应码：{}，response响应码：{}，任务id：{}，任务实例id：{}",
                         callbackParameters.getStartUrl(), statusCode,
-                        responseMap == null ? null : responseMap.get(respCode), taskExecutionContext.getTaskCode(), taskExecutionContext.getTaskInstanceId());
+                        responseData == null ? null : responseData.getCode(), taskExecutionContext.getTaskCode(), taskExecutionContext.getTaskInstanceId());
                 exitStatusCode = -1;
                 result = false;
             }
@@ -185,18 +194,19 @@ public class CallbackTask extends AbstractTask {
     private boolean restartTask() {
         boolean result = true;
         try (CloseableHttpClient client = createHttpClient();
-             CloseableHttpResponse response = sendRequestPost(client, dsAgentPrefixUrl)) {
+             CloseableHttpResponse response = sendRequestPost(client, dsAgentExecApiUrl)) {
             int statusCode = response.getStatusLine().getStatusCode();
             String body = getResponseBody(response);
-            Map<String, String> responseMap = JSONUtils.toMap(body);
-            if (!"200".equals(statusCode) || responseMap == null || !"0".equals(responseMap.get(respCode))) {
+            //Map<String, String> responseMap = JSONUtils.toMap(body);
+            ApiResponseData responseData = JSONUtils.parseObject(body, ApiResponseData.class);
+            if (200 != statusCode || responseData == null || 0 != responseData.getCode()) {
                 log.error("{}任务重启失败，http响应码：{}，response响应码：{}，任务code：{}",
-                        dsAgentPrefixUrl, statusCode,
-                        responseMap == null ? null : responseMap.get(respCode), taskExecutionContext.getProcessDefineCode());
+                        dsAgentExecApiUrl, statusCode,
+                        responseData == null ? null : responseData.getCode(), taskExecutionContext.getProcessDefineCode());
                 result = false;
             }
         } catch (Exception e) {
-            log.error("httpUrl[" + dsAgentPrefixUrl + "] connection failed" , e);
+            log.error("httpUrl[" + dsAgentExecApiUrl + "] connection failed" , e);
             result = false;
         }
         return result;
@@ -232,7 +242,7 @@ public class CallbackTask extends AbstractTask {
     }
 
 
-    private CloseableHttpResponse sendRequest(CloseableHttpClient client, String url) throws
+    private CloseableHttpResponse sendRequestGet(CloseableHttpClient client, String url) throws
             IOException, URISyntaxException {
 
         URI uri = new URIBuilder(url)

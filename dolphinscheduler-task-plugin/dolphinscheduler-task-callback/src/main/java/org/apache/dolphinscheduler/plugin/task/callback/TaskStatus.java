@@ -22,7 +22,7 @@ package org.apache.dolphinscheduler.plugin.task.callback;
  */
 public enum TaskStatus {
     SUCCESS,
-    FAILD,
+    FAILED,
     RUNNING,
     CANCEL
 }
