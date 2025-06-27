@@ -14,6 +14,6 @@ import lombok.Data;
 @Data
 public class ApiResponseData {
     private int code;
-    private String status;
-    private String data;
+    private String msg;
+    private Object data;
 }

@@ -9,6 +9,11 @@ import org.apache.dolphinscheduler.plugin.task.api.parameters.AbstractParameters
 public class CallbackParameters extends AbstractParameters {
 
     /**
+     * 任务id
+     */
+    private Long taskId;
+
+    /**
      * 任务类型：实时/批量
      */
     private TaskRealType taskRealType;

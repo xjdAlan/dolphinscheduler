@@ -104,24 +104,21 @@ public class CallbackTask extends AbstractTask {
                 String body = getResponseBody(response);
                 ApiResponseData responseData =
                         JSONUtils.parseObject(body, ApiResponseData.class);
-                //Map<String, Object> responseMap = JSONUtils.toMap(body, String.class, Object.class);
                 if (200 != statusCode || responseData == null || 0 != responseData.getCode()) {
                     failCount++;
-                    log.error("{}请求获取状态失败，失败第{}次，taskId：{}，taskInstanceId：{}",
-                            callbackParameters.getStatusUrl(), failCount,
+                    log.error("{}{}请求获取状态失败，失败第{}次，taskId：{}，taskInstanceId：{}",
+                            dataCenterPrefixUrl, callbackParameters.getStatusUrl(), failCount,
                             taskExecutionContext.getTaskCode(), taskExecutionContext.getTaskInstanceId());
                     if (failCount >= callbackParameters.getMaxPollAttempts()) {
-                        log.error("{}请求获取状态失败次数超过最大限制，任务失败，taskId：{}，taskInstanceId：{}",
-                                callbackParameters.getStatusUrl(), taskExecutionContext.getTaskCode(), taskExecutionContext.getTaskInstanceId());
+                        log.error("{}{}请求获取状态失败次数超过最大限制，任务失败，taskId：{}，taskInstanceId：{}",
+                                dataCenterPrefixUrl, callbackParameters.getStatusUrl(), taskExecutionContext.getTaskCode(), taskExecutionContext.getTaskInstanceId());
                         exitStatusCode = -1;
                         return;
                     }
                     continue;
                 }
 
-                //String status = responseMap.get(respStatus);
-                String status = responseData.getData();
-
+                String status = String.valueOf(responseData.getData());
                 switch (callbackParameters.getTaskRealType()) {
                     case BATCH -> {
                         if (TaskStatus.RUNNING.toString().equals(status)) {
@@ -157,8 +154,8 @@ public class CallbackTask extends AbstractTask {
                     }
                 }
             } catch (Exception e) {
-                log.error("{}请求获取状态异常，taskId：{}，taskInstanceId：{}",
-                        callbackParameters.getStatusUrl(),
+                log.error("{}{}请求获取状态异常，taskId：{}，taskInstanceId：{}",
+                        dataCenterPrefixUrl, callbackParameters.getStatusUrl(),
                         taskExecutionContext.getTaskCode(), taskExecutionContext.getTaskInstanceId(), e);
                 exitStatusCode = -1;
                 throw new TaskException("Execute callback task failed", e);
@@ -173,19 +170,18 @@ public class CallbackTask extends AbstractTask {
              CloseableHttpResponse response = sendRequestGet(client, dataCenterPrefixUrl + callbackParameters.getStartUrl())) {
             int statusCode = response.getStatusLine().getStatusCode();
             String body = getResponseBody(response);
-            //Map<String, Object> responseMap = JSONUtils.toMap(body, String.class, Object.class);
             ApiResponseData responseData =
                     JSONUtils.parseObject(body, ApiResponseData.class);
             if (200 != statusCode || responseData == null || 0 != responseData.getCode()) {
-                log.error("{}任务开始失败，http响应码：{}，response响应码：{}，任务id：{}，任务实例id：{}",
-                        callbackParameters.getStartUrl(), statusCode,
+                log.error("{}{}任务开始失败，http响应码：{}，response响应码：{}，任务id：{}，任务实例id：{}",
+                        dataCenterPrefixUrl, callbackParameters.getStartUrl(), statusCode,
                         responseData == null ? null : responseData.getCode(), taskExecutionContext.getTaskCode(), taskExecutionContext.getTaskInstanceId());
                 exitStatusCode = -1;
                 result = false;
             }
         } catch (Exception e) {
             exitStatusCode = -1;
-            log.error("httpUrl[" + callbackParameters.getStartUrl() + "] connection failed" , e);
+            log.error("httpUrl[" + dataCenterPrefixUrl + callbackParameters.getStartUrl() + "] connection failed" , e);
             throw new TaskException("Execute callback task failed", e);
         }
         return result;
@@ -197,7 +193,6 @@ public class CallbackTask extends AbstractTask {
              CloseableHttpResponse response = sendRequestPost(client, dsAgentExecApiUrl)) {
             int statusCode = response.getStatusLine().getStatusCode();
             String body = getResponseBody(response);
-            //Map<String, String> responseMap = JSONUtils.toMap(body);
             ApiResponseData responseData = JSONUtils.parseObject(body, ApiResponseData.class);
             if (200 != statusCode || responseData == null || 0 != responseData.getCode()) {
                 log.error("{}任务重启失败，http响应码：{}，response响应码：{}，任务code：{}",
@@ -246,7 +241,7 @@ public class CallbackTask extends AbstractTask {
             IOException, URISyntaxException {
 
         URI uri = new URIBuilder(url)
-                .setParameter(paramTaskId, String.valueOf(taskExecutionContext.getTaskCode()))
+                .setParameter(paramTaskId, String.valueOf(callbackParameters.getTaskId()))
                 .setParameter(paramTaskInstanceId, String.valueOf(taskExecutionContext.getTaskInstanceId()))
                 .build();
 
