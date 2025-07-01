@@ -133,6 +133,7 @@
                                     <arguments>
                                         <argument>${basedir}/../dolphinscheduler-dist/src/main/assembly/create-symlinks.sh</argument>
                                     </arguments>
+                                    <skip>false</skip>
                                 </configuration>
                             </execution>
                         </executions>
