@@ -95,7 +95,7 @@ public class CallbackTask extends AbstractTask {
                 Thread.sleep(callbackParameters.getPollInterval() * 1000);
             } catch (InterruptedException e) {
                 log.error("Thread.sleep error, taskId:{}, taskInstanceId:{}",
-                        taskExecutionContext.getTaskCode(), taskExecutionContext.getTaskInstanceId(), e);
+                        taskExecutionContext.getTaskCode(), taskExecutionContext.getProcessInstanceId(), e);
             }
 
             try (CloseableHttpClient client = createHttpClient();
@@ -108,10 +108,10 @@ public class CallbackTask extends AbstractTask {
                     failCount++;
                     log.error("{}{}请求获取状态失败，失败第{}次，taskId：{}，taskInstanceId：{}",
                             dataCenterPrefixUrl, callbackParameters.getStatusUrl(), failCount,
-                            taskExecutionContext.getTaskCode(), taskExecutionContext.getTaskInstanceId());
+                            taskExecutionContext.getTaskCode(), taskExecutionContext.getProcessInstanceId());
                     if (failCount >= callbackParameters.getMaxPollAttempts()) {
                         log.error("{}{}请求获取状态失败次数超过最大限制，任务失败，taskId：{}，taskInstanceId：{}",
-                                dataCenterPrefixUrl, callbackParameters.getStatusUrl(), taskExecutionContext.getTaskCode(), taskExecutionContext.getTaskInstanceId());
+                                dataCenterPrefixUrl, callbackParameters.getStatusUrl(), taskExecutionContext.getTaskCode(), taskExecutionContext.getProcessInstanceId());
                         exitStatusCode = -1;
                         return;
                     }
@@ -119,6 +119,8 @@ public class CallbackTask extends AbstractTask {
                 }
 
                 String status = String.valueOf(responseData.getData());
+                log.info("获取到任务状态：{},taskCode:{},taskInstanceId:{}", status,
+                        taskExecutionContext.getTaskCode(), taskExecutionContext.getProcessInstanceId());
                 switch (callbackParameters.getTaskRealType()) {
                     case BATCH -> {
                         if (TaskStatus.RUNNING.toString().equals(status)) {
@@ -156,7 +158,7 @@ public class CallbackTask extends AbstractTask {
             } catch (Exception e) {
                 log.error("{}{}请求获取状态异常，taskId：{}，taskInstanceId：{}",
                         dataCenterPrefixUrl, callbackParameters.getStatusUrl(),
-                        taskExecutionContext.getTaskCode(), taskExecutionContext.getTaskInstanceId(), e);
+                        taskExecutionContext.getTaskCode(), taskExecutionContext.getProcessInstanceId(), e);
                 exitStatusCode = -1;
                 throw new TaskException("Execute callback task failed", e);
             }
@@ -175,15 +177,18 @@ public class CallbackTask extends AbstractTask {
             if (200 != statusCode || responseData == null || 0 != responseData.getCode()) {
                 log.error("{}{}任务开始失败，http响应码：{}，response响应码：{}，任务id：{}，任务实例id：{}",
                         dataCenterPrefixUrl, callbackParameters.getStartUrl(), statusCode,
-                        responseData == null ? null : responseData.getCode(), taskExecutionContext.getTaskCode(), taskExecutionContext.getTaskInstanceId());
+                        responseData == null ? null : responseData.getCode(), taskExecutionContext.getTaskCode(), taskExecutionContext.getProcessInstanceId());
                 exitStatusCode = -1;
                 result = false;
             }
         } catch (Exception e) {
             exitStatusCode = -1;
-            log.error("httpUrl[" + dataCenterPrefixUrl + callbackParameters.getStartUrl() + "] connection failed" , e);
+            log.error("httpUrl[" + dataCenterPrefixUrl + callbackParameters.getStartUrl() + "] connection failed，taskCode:" +
+                    taskExecutionContext.getTaskCode() + "，taskInstanceId:" + taskExecutionContext.getProcessInstanceId(), e);
             throw new TaskException("Execute callback task failed", e);
         }
+        log.info("{}{}任务开始成功，任务id：{}，任务实例id：{}", dataCenterPrefixUrl, callbackParameters.getStartUrl(),
+                taskExecutionContext.getTaskCode(), taskExecutionContext.getProcessInstanceId());
         return result;
     }
 
@@ -201,7 +206,7 @@ public class CallbackTask extends AbstractTask {
                 result = false;
             }
         } catch (Exception e) {
-            log.error("httpUrl[" + dsAgentExecApiUrl + "] connection failed" , e);
+            log.error("httpUrl[" + dsAgentExecApiUrl + "] connection failed, taskCode: " + taskExecutionContext.getProcessDefineCode() , e);
             result = false;
         }
         return result;
@@ -242,8 +247,11 @@ public class CallbackTask extends AbstractTask {
 
         URI uri = new URIBuilder(url)
                 .setParameter(paramTaskId, String.valueOf(callbackParameters.getTaskId()))
-                .setParameter(paramTaskInstanceId, String.valueOf(taskExecutionContext.getTaskInstanceId()))
+                .setParameter(paramTaskInstanceId, String.valueOf(taskExecutionContext.getProcessInstanceId()))
                 .build();
+
+        log.info("准备请求任务接口: {},{}:{},{}:{}", url, paramTaskId, callbackParameters.getTaskId(),
+                paramTaskInstanceId, taskExecutionContext.getProcessInstanceId());
 
         HttpGet httpGet = new HttpGet(uri);
         httpGet.setHeader("Accept", "application/json");
@@ -279,8 +287,8 @@ public class CallbackTask extends AbstractTask {
 
 
 
-    private final int socketTimeout = 5000;
-    private final int connectTimeout = 3000;
+    private final int socketTimeout = 20000;
+    private final int connectTimeout = 5000;
     private final String paramTaskInstanceId = "taskInstanceId";
     private final String paramTaskId = "taskId";
     private final String respStatus = "status";
