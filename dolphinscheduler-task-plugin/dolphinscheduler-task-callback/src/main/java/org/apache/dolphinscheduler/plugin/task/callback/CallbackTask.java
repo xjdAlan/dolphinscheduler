@@ -87,6 +87,8 @@ public class CallbackTask extends AbstractTask {
         if (!startTask()) {
             return;
         }
+        log.info("{}{}任务开始成功，任务id：{}，任务实例id：{}", dataCenterPrefixUrl, callbackParameters.getStartUrl(),
+                taskExecutionContext.getTaskCode(), taskExecutionContext.getProcessInstanceId());
 
         //开始轮询任务状态
         int failCount = 0;
@@ -187,8 +189,6 @@ public class CallbackTask extends AbstractTask {
                     taskExecutionContext.getTaskCode() + "，taskInstanceId:" + taskExecutionContext.getProcessInstanceId(), e);
             throw new TaskException("Execute callback task failed", e);
         }
-        log.info("{}{}任务开始成功，任务id：{}，任务实例id：{}", dataCenterPrefixUrl, callbackParameters.getStartUrl(),
-                taskExecutionContext.getTaskCode(), taskExecutionContext.getProcessInstanceId());
         return result;
     }
 
